@@ -32,16 +32,7 @@
 
 package org.opensearch.index.get;
 
-import org.apache.lucene.index.DocValuesSkipIndexType;
-import org.apache.lucene.index.DocValuesType;
-import org.apache.lucene.index.FieldInfo;
-import org.apache.lucene.index.IndexOptions;
-import org.apache.lucene.index.IndexableField;
-import org.apache.lucene.index.IndexableFieldType;
-import org.apache.lucene.index.StoredFieldVisitor;
-import org.apache.lucene.index.Term;
-import org.apache.lucene.index.VectorEncoding;
-import org.apache.lucene.index.VectorSimilarityFunction;
+import org.apache.lucene.index.*;
 import org.opensearch.OpenSearchException;
 import org.opensearch.common.Nullable;
 import org.opensearch.common.annotation.PublicApi;
@@ -52,26 +43,20 @@ import org.opensearch.common.lucene.uid.VersionsAndSeqNoResolver.DocIdAndVersion
 import org.opensearch.common.metrics.CounterMetric;
 import org.opensearch.common.metrics.MeanMetric;
 import org.opensearch.common.util.set.Sets;
+import org.opensearch.common.xcontent.XContentFactory;
 import org.opensearch.common.xcontent.XContentHelper;
 import org.opensearch.common.xcontent.XContentType;
 import org.opensearch.common.xcontent.support.XContentMapValues;
 import org.opensearch.core.common.bytes.BytesReference;
 import org.opensearch.core.xcontent.MediaTypeRegistry;
+import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.index.IndexSettings;
 import org.opensearch.index.VersionType;
 import org.opensearch.index.engine.Engine;
 import org.opensearch.index.engine.TranslogLeafReader;
 import org.opensearch.index.fieldvisitor.CustomFieldsVisitor;
 import org.opensearch.index.fieldvisitor.FieldsVisitor;
-import org.opensearch.index.mapper.DocumentMapper;
-import org.opensearch.index.mapper.IdFieldMapper;
-import org.opensearch.index.mapper.Mapper;
-import org.opensearch.index.mapper.MapperService;
-import org.opensearch.index.mapper.ParsedDocument;
-import org.opensearch.index.mapper.RoutingFieldMapper;
-import org.opensearch.index.mapper.SourceFieldMapper;
-import org.opensearch.index.mapper.SourceToParse;
-import org.opensearch.index.mapper.Uid;
+import org.opensearch.index.mapper.*;
 import org.opensearch.index.shard.AbstractIndexShardComponent;
 import org.opensearch.index.shard.IndexShard;
 import org.opensearch.search.fetch.subphase.FetchSourceContext;
@@ -174,6 +159,7 @@ public final class ShardGetService extends AbstractIndexShardComponent {
      * Note: Call <b>must</b> release engine searcher associated with engineGetResult!
      */
     public GetResult get(Engine.GetResult engineGetResult, String id, String[] fields, FetchSourceContext fetchSourceContext) {
+        System.out.println("--- get called ---");
         if (!engineGetResult.exists()) {
             return new GetResult(shardId.getIndexName(), id, UNASSIGNED_SEQ_NO, UNASSIGNED_PRIMARY_TERM, -1, false, null, null, null);
         }
@@ -222,6 +208,7 @@ public final class ShardGetService extends AbstractIndexShardComponent {
         long ifPrimaryTerm,
         FetchSourceContext fetchSourceContext
     ) {
+        System.out.println("--- innerGet called ---");
         fetchSourceContext = normalizeFetchSourceContent(fetchSourceContext, gFields);
 
         Term uidTerm = new Term(IdFieldMapper.NAME, Uid.encodeId(id));
@@ -278,12 +265,12 @@ public final class ShardGetService extends AbstractIndexShardComponent {
             forceSourceForComputingTranslogStoredFields ? FetchSourceContext.FETCH_SOURCE : fetchSourceContext
         );
         if (fieldVisitor != null) {
-            try {
-                docIdAndVersion.reader.storedFields().document(docIdAndVersion.docId, fieldVisitor);
-            } catch (IOException e) {
-                throw new OpenSearchException("Failed to get id [" + id + "]", e);
-            }
-            source = fieldVisitor.source();
+//            try {
+//                docIdAndVersion.reader.storedFields().document(docIdAndVersion.docId, fieldVisitor);
+//            } catch (IOException e) {
+//                throw new OpenSearchException("Failed to get id [" + id + "]", e);
+//            }
+//            source = fieldVisitor.source();
 
             // in case we read from translog, some extra steps are needed to make _source consistent and to load stored fields
             if (get.isFromTranslog()) {
@@ -392,6 +379,14 @@ public final class ShardGetService extends AbstractIndexShardComponent {
 
         if (!fetchSourceContext.fetchSource()) {
             source = null;
+        } else {
+            try (XContentBuilder builder = XContentFactory.jsonBuilder().startObject()) {
+                deriveSource(docIdAndVersion.docId, builder, mapperService, docIdAndVersion.reader);
+                builder.endObject();
+                source = BytesReference.bytes(builder);
+            } catch (Exception e) {
+                throw new OpenSearchException("Failed to get id [" + id + "]", e);
+            }
         }
 
         if (source != null && get.isFromTranslog()) {
@@ -436,5 +431,13 @@ public final class ShardGetService extends AbstractIndexShardComponent {
         }
 
         return new CustomFieldsVisitor(Sets.newHashSet(fields), fetchSourceContext.fetchSource());
+    }
+
+    private void deriveSource(int docId, XContentBuilder builder, MapperService mapperService, LeafReader leafReader) throws IOException {
+        for (final Mapper mapper : mapperService.documentMapper().mappers()) {
+            if (!(mapper instanceof MetadataFieldMapper) && (mapper instanceof FieldMapper fieldMapper)) {
+                fieldMapper.buildDerivedSource(builder, leafReader, docId);
+            }
+        }
     }
 }
