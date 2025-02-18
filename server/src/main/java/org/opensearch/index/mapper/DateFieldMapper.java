@@ -224,13 +224,13 @@ public final class DateFieldMapper extends ParametrizedFieldMapper {
         possibleToDeriveSource();
         boolean isStoredFieldPresent = false;
         if (mappedFieldType.isStored()) {
-            List<Object> values = Collections.emptyList();
+            List<Object> values = new ArrayList<>();
             SingleFieldsVisitor singleFieldsVisitor = new SingleFieldsVisitor(mappedFieldType, values);
             StoredFields storedFields = leafReader.storedFields();
             storedFields.document(docId, singleFieldsVisitor);
             if (!values.isEmpty()) {
                 if (values.size() > 1) {
-                    builder.array(name(), values);
+                    builder.array(name(), values.toArray());
                 } else {
                     builder.field(name(), values.getFirst());
                 }
@@ -238,7 +238,6 @@ public final class DateFieldMapper extends ParametrizedFieldMapper {
             }
         }
         if (isStoredFieldPresent) {
-            System.out.println("Stored field is present");
             return;
         }
         SortedNumericDocValues sortedNumericDocValues = leafReader.getSortedNumericDocValues(name());
@@ -436,7 +435,7 @@ public final class DateFieldMapper extends ParametrizedFieldMapper {
             String nullValue,
             Map<String, String> meta
         ) {
-            this(name, isSearchable, isStored, hasDocValues, dateTimeFormatter, resolution, nullValue, meta, true);
+            this(name, isSearchable, isStored, hasDocValues, dateTimeFormatter, resolution, nullValue, meta, false);
         }
 
 

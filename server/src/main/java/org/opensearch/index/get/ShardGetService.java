@@ -208,7 +208,6 @@ public final class ShardGetService extends AbstractIndexShardComponent {
         long ifPrimaryTerm,
         FetchSourceContext fetchSourceContext
     ) {
-        System.out.println("--- innerGet called ---");
         fetchSourceContext = normalizeFetchSourceContent(fetchSourceContext, gFields);
 
         Term uidTerm = new Term(IdFieldMapper.NAME, Uid.encodeId(id));
