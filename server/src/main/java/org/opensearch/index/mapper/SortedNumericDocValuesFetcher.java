@@ -22,7 +22,7 @@ import java.util.List;
  * @opensearch.internal
  */
 public class SortedNumericDocValuesFetcher extends FieldValueFetcher {
-    protected SortedNumericDocValuesFetcher(MappedFieldType mappedFieldType, String SimpleName) {
+    public SortedNumericDocValuesFetcher(MappedFieldType mappedFieldType, String SimpleName) {
         super(SimpleName);
         this.mappedFieldType = mappedFieldType;
     }
