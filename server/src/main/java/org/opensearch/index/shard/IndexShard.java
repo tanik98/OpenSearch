@@ -1978,7 +1978,7 @@ public class IndexShard extends AbstractIndexShardComponent implements IndicesCl
         }
     }
 
-    static Engine.Searcher wrapSearcher(
+    public static Engine.Searcher wrapSearcher(
         Engine.Searcher engineSearcher,
         CheckedFunction<DirectoryReader, DirectoryReader, IOException> readerWrapper
     ) throws IOException {
@@ -3073,7 +3073,7 @@ public class IndexShard extends AbstractIndexShardComponent implements IndicesCl
      */
     public Translog.Snapshot getHistoryOperations(String reason, long startingSeqNo, long endSeqNo, boolean accurateCount)
         throws IOException {
-        return getEngine().newChangesSnapshot(reason, startingSeqNo, endSeqNo, true, accurateCount);
+        return getEngine().newChangesSnapshot(reason, mapperService, startingSeqNo, endSeqNo, true, accurateCount);
     }
 
     /**
@@ -3133,7 +3133,7 @@ public class IndexShard extends AbstractIndexShardComponent implements IndicesCl
         boolean requiredFullRange,
         boolean accurateCount
     ) throws IOException {
-        return getEngine().newChangesSnapshot(source, fromSeqNo, toSeqNo, requiredFullRange, accurateCount);
+        return getEngine().newChangesSnapshot(source, mapperService, fromSeqNo, toSeqNo, requiredFullRange, accurateCount);
     }
 
     public List<Segment> segments(boolean verbose) {

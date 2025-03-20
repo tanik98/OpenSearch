@@ -33,6 +33,7 @@
 package org.opensearch.index.mapper;
 
 import org.apache.lucene.index.LeafReader;
+import org.opensearch.OpenSearchException;
 import org.opensearch.common.Explicit;
 import org.opensearch.common.Nullable;
 import org.opensearch.common.annotation.PublicApi;
@@ -537,14 +538,18 @@ public class RootObjectMapper extends ObjectMapper {
     }
 
     public BytesReference deriveSource(LeafReader leafReader, int docId) throws IOException {
-        try (XContentBuilder builder = XContentFactory.jsonBuilder().startObject()) {
+        XContentBuilder builder = XContentFactory.jsonBuilder().startObject();
+        try {
             Iterator<Mapper> mappers = this.iterator();
             while (mappers.hasNext()) {
                 Mapper mapper = mappers.next();
                 mapper.deriveSource(builder, leafReader, docId);
             }
+        } catch (Exception e) {
+            throw new OpenSearchException("Failed to derive source for id [" + docId + "]", e);
+        } finally {
             builder.endObject();
-            return BytesReference.bytes(builder);
         }
+        return BytesReference.bytes(builder);
     }
 }

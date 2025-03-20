@@ -9,7 +9,9 @@
 package org.opensearch.common.lucene.index;
 
 import org.apache.lucene.codecs.StoredFieldsReader;
-import org.apache.lucene.index.*;
+import org.apache.lucene.index.CodecReader;
+import org.apache.lucene.index.LeafReader;
+import org.apache.lucene.index.StoredFields;
 import org.opensearch.common.CheckedFunction;
 import org.opensearch.core.common.bytes.BytesReference;
 
