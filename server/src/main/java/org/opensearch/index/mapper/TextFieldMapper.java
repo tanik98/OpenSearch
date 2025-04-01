@@ -1237,9 +1237,10 @@ public class TextFieldMapper extends ParametrizedFieldMapper {
         if (keywordMapperForDerivedSource == null) {
             for (final Mapper mapper : this.multiFields()) {
                 if (mapper instanceof KeywordFieldMapper) {
-                    KeywordFieldMapper.KeywordFieldType subType = ((KeywordFieldMapper) mapper).fieldType();
-                    if (subType.isStored() || subType.hasDocValues()) {
-                        keywordMapperForDerivedSource = (KeywordFieldMapper) mapper;
+                    try {
+                        final KeywordFieldMapper subFieldMapper = (KeywordFieldMapper) mapper;
+                        subFieldMapper.canDeriveSourceInternal();
+                        keywordMapperForDerivedSource = subFieldMapper;
                         keywordMapperForDerivedSource.setDerivedFieldGenerator(
                             new DerivedFieldGenerator(
                                 keywordMapperForDerivedSource.fieldType(),
@@ -1248,12 +1249,16 @@ public class TextFieldMapper extends ParametrizedFieldMapper {
                             )
                         );
                         return;
-                    }
+                    } catch (Exception ignored) {}
                 }
             }
         }
         throw new UnsupportedOperationException(
-            "Unable to derive source for [" + name() + "] with stored field " + "disabled and subfield is not there with keyword field type"
+            "Unable to derive source for ["
+                + name()
+                + "] with stored field "
+                + "disabled and "
+                + "keyword subfield is not there with derived source supported"
         );
     }
 

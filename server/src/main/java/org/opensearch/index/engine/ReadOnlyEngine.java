@@ -285,7 +285,8 @@ public class ReadOnlyEngine extends Engine {
     }
 
     @Override
-    public GetResult get(Get get, BiFunction<String, SearcherScope, Engine.Searcher> searcherFactory) throws EngineException {
+    public GetResult get(Get get, MapperService mapperService, BiFunction<String, SearcherScope, Engine.Searcher> searcherFactory)
+        throws EngineException {
         return getFromSearcher(get, searcherFactory, SearcherScope.EXTERNAL);
     }
 
@@ -355,7 +356,6 @@ public class ReadOnlyEngine extends Engine {
     @Override
     public Translog.Snapshot newChangesSnapshot(
         String source,
-        MapperService mapperService,
         long fromSeqNo,
         long toSeqNo,
         boolean requiredFullRange,
@@ -366,7 +366,7 @@ public class ReadOnlyEngine extends Engine {
 
     @Override
     public int countNumberOfHistoryOperations(String source, long fromSeqNo, long toSeqNo) throws IOException {
-        try (Translog.Snapshot snapshot = newChangesSnapshot(source, null, fromSeqNo, toSeqNo, false, true)) {
+        try (Translog.Snapshot snapshot = newChangesSnapshot(source, fromSeqNo, toSeqNo, false, true)) {
             return snapshot.totalOperations();
         }
     }

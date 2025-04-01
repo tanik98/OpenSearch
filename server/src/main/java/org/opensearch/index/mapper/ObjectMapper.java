@@ -915,8 +915,7 @@ public class ObjectMapper extends Mapper implements Cloneable {
     @Override
     public void canDeriveSource() {
         if (!this.enabled.value() || this.nested.isNested()) {
-            throw new UnsupportedOperationException("Derived source is not supported for " + name()
-                + " field as it is disabled/nested");
+            throw new UnsupportedOperationException("Derived source is not supported for " + name() + " field as it is disabled/nested");
         }
         for (final Mapper mapper : this.mappers.values()) {
             mapper.canDeriveSource();

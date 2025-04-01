@@ -553,6 +553,16 @@ public abstract class ParametrizedFieldMapper extends FieldMapper {
             return Parameter.floatParam("boost", true, m -> m.fieldType().boost(), 1.0f);
         }
 
+        public static Parameter<SourceFieldMapper.SourceOptions> sourceOptionParam(
+            String name,
+            Function<FieldMapper, SourceFieldMapper.SourceOptions> initializer,
+            SourceFieldMapper.SourceOptions defaultValue
+        ) {
+            return new Parameter<>(name, false, () -> defaultValue, (n, c, o) -> {
+                String sourceOption = o.toString();
+                return SourceFieldMapper.SourceOptions.option(sourceOption);
+            }, initializer);
+        }
     }
 
     /**

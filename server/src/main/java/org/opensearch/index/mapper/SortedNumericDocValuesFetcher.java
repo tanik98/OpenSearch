@@ -39,8 +39,7 @@ public class SortedNumericDocValuesFetcher extends FieldValueFetcher {
                 values.add(sortedNumericDocValues.nextValue());
             }
         } catch (Exception e) {
-            throw new IOException("Failed to read doc values for document " + docId
-                + " in field " + mappedFieldType.name(), e);
+            throw new IOException("Failed to read doc values for document " + docId + " in field " + mappedFieldType.name(), e);
         }
         return values;
     }

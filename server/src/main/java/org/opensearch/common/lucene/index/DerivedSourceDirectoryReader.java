@@ -16,6 +16,12 @@ import org.opensearch.core.common.bytes.BytesReference;
 
 import java.io.IOException;
 
+/**
+ * {@link FilterDirectoryReader} that supports deriving source from lucene fields instead of directly reading from _source
+ * field.
+ *
+ * @opensearch.internal
+ */
 public class DerivedSourceDirectoryReader extends FilterDirectoryReader {
     private final CheckedBiFunction<LeafReader, Integer, BytesReference, IOException> sourceProvider;
     private final FilterDirectoryReader.SubReaderWrapper wrapper;

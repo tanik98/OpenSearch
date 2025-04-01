@@ -175,14 +175,14 @@ public class IngestionEngine extends InternalEngine {
     }
 
     @Override
-    public GetResult get(Get get, BiFunction<String, SearcherScope, Searcher> searcherFactory) throws EngineException {
+    public GetResult get(Get get, MapperService mapperService, BiFunction<String, SearcherScope, Searcher> searcherFactory)
+        throws EngineException {
         return getFromSearcher(get, searcherFactory, SearcherScope.EXTERNAL);
     }
 
     @Override
     public Translog.Snapshot newChangesSnapshot(
         String source,
-        MapperService mapperService,
         long fromSeqNo,
         long toSeqNo,
         boolean requiredFullRange,

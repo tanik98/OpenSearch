@@ -479,14 +479,15 @@ public class IndexShard extends AbstractIndexShardComponent implements IndicesCl
             cachingPolicy = new UsageTrackingQueryCachingPolicy();
         }
         indexShardOperationPermits = new IndexShardOperationPermits(shardId, threadPool);
-        if (indexSettings.isDerivedSourceEnabled()) {
-            readerWrapper = reader -> {
-                final DirectoryReader wrappedReader = indexReaderWrapper == null ? reader : indexReaderWrapper.apply(reader);
-                return DerivedSourceDirectoryReader.wrap(wrappedReader, mapperService.documentMapper().root()::deriveSource);
-            };
-        } else {
-            readerWrapper = indexReaderWrapper;
-        }
+        // if (mapperService.isDerivedSourceEnabled()) {
+        // readerWrapper = reader -> {
+        // final DirectoryReader wrappedReader = indexReaderWrapper == null ? reader : indexReaderWrapper.apply(reader);
+        // return DerivedSourceDirectoryReader.wrap(wrappedReader, mapperService.documentMapper().root()::deriveSource);
+        // };
+        // } else {
+        // readerWrapper = indexReaderWrapper;
+        // }
+        readerWrapper = indexReaderWrapper;
         refreshListeners = buildRefreshListeners();
         lastSearcherAccess.set(threadPool.relativeTimeInMillis());
         persistMetadata(path, indexSettings, shardRouting, null, logger);
@@ -1398,7 +1399,7 @@ public class IndexShard extends AbstractIndexShardComponent implements IndicesCl
         if (mapper == null) {
             return GetResult.NOT_EXISTS;
         }
-        return getEngine().get(get, this::acquireSearcher);
+        return getEngine().get(get, mapperService, this::acquireSearcher);
     }
 
     /**
@@ -1965,6 +1966,15 @@ public class IndexShard extends AbstractIndexShardComponent implements IndicesCl
             : "DirectoryReader must be an instance or OpenSearchDirectoryReader";
         boolean success = false;
         try {
+            final CheckedFunction<DirectoryReader, DirectoryReader, IOException> readerWrapper;
+            if (mapperService.isDerivedSourceEnabled()) {
+                readerWrapper = reader -> {
+                    final DirectoryReader wrappedReader = this.readerWrapper == null ? reader : this.readerWrapper.apply(reader);
+                    return DerivedSourceDirectoryReader.wrap(wrappedReader, mapperService.documentMapper().root()::deriveSource);
+                };
+            } else {
+                readerWrapper = this.readerWrapper;
+            }
             final Engine.Searcher newSearcher = readerWrapper == null ? searcher : wrapSearcher(searcher, readerWrapper);
             assert newSearcher != null;
             success = true;
@@ -3073,7 +3083,7 @@ public class IndexShard extends AbstractIndexShardComponent implements IndicesCl
      */
     public Translog.Snapshot getHistoryOperations(String reason, long startingSeqNo, long endSeqNo, boolean accurateCount)
         throws IOException {
-        return getEngine().newChangesSnapshot(reason, mapperService, startingSeqNo, endSeqNo, true, accurateCount);
+        return getEngine().newChangesSnapshot(reason, startingSeqNo, endSeqNo, true, accurateCount);
     }
 
     /**
@@ -3133,7 +3143,7 @@ public class IndexShard extends AbstractIndexShardComponent implements IndicesCl
         boolean requiredFullRange,
         boolean accurateCount
     ) throws IOException {
-        return getEngine().newChangesSnapshot(source, mapperService, fromSeqNo, toSeqNo, requiredFullRange, accurateCount);
+        return getEngine().newChangesSnapshot(source, fromSeqNo, toSeqNo, requiredFullRange, accurateCount);
     }
 
     public List<Segment> segments(boolean verbose) {

@@ -45,8 +45,7 @@ public class SortedSetDocValuesFetcher extends FieldValueFetcher {
                 }
             }
         } catch (IOException e) {
-            throw new IOException("Failed to read doc values for document " + docId
-                + " in field " + mappedFieldType.name(), e);
+            throw new IOException("Failed to read doc values for document " + docId + " in field " + mappedFieldType.name(), e);
         }
         return values;
     }

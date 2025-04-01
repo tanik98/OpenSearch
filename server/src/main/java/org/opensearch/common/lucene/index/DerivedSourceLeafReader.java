@@ -17,6 +17,11 @@ import org.opensearch.core.common.bytes.BytesReference;
 
 import java.io.IOException;
 
+/**
+ * Wraps a {@link LeafReader} and provides access to the derived source.
+ *
+ * @opensearch.internal
+ */
 public class DerivedSourceLeafReader extends SequentialStoredFieldsLeafReader {
 
     private final CheckedFunction<Integer, BytesReference, IOException> sourceProvider;

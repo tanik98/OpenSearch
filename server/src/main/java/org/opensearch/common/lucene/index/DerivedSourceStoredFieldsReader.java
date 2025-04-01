@@ -9,7 +9,14 @@
 package org.opensearch.common.lucene.index;
 
 import org.apache.lucene.codecs.StoredFieldsReader;
-import org.apache.lucene.index.*;
+import org.apache.lucene.index.DocValuesSkipIndexType;
+import org.apache.lucene.index.DocValuesType;
+import org.apache.lucene.index.FieldInfo;
+import org.apache.lucene.index.IndexOptions;
+import org.apache.lucene.index.StoredFieldVisitor;
+import org.apache.lucene.index.StoredFields;
+import org.apache.lucene.index.VectorEncoding;
+import org.apache.lucene.index.VectorSimilarityFunction;
 import org.opensearch.common.CheckedFunction;
 import org.opensearch.core.common.bytes.BytesReference;
 import org.opensearch.index.mapper.SourceFieldMapper;
@@ -17,6 +24,10 @@ import org.opensearch.index.mapper.SourceFieldMapper;
 import java.io.IOException;
 import java.util.Collections;
 
+/**
+ * A {@link StoredFieldsReader} that injects the _source field by using {@link DerivedSourceStoredFields}, which dynamically
+ * derives the source.
+ */
 public class DerivedSourceStoredFieldsReader extends StoredFieldsReader {
 
     private final StoredFieldsReader delegate;
@@ -54,6 +65,11 @@ public class DerivedSourceStoredFieldsReader extends StoredFieldsReader {
         storedFields.document(docId, visitor);
     }
 
+    /**
+     * A {@link StoredFields} that injects a _source field into the stored fields after deriving it.
+     *
+     * @opensearch.internal
+     */
     public static class DerivedSourceStoredFields extends StoredFields {
         private static final FieldInfo FAKE_SOURCE_FIELD = new FieldInfo(
             SourceFieldMapper.NAME,

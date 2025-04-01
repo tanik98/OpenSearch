@@ -37,7 +37,6 @@ import org.opensearch.OpenSearchException;
 import org.opensearch.common.Explicit;
 import org.opensearch.common.Nullable;
 import org.opensearch.common.annotation.PublicApi;
-import org.opensearch.common.io.stream.BytesStreamOutput;
 import org.opensearch.common.logging.DeprecationLogger;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.time.DateFormatter;
