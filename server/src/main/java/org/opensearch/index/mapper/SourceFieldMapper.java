@@ -118,6 +118,8 @@ public class SourceFieldMapper extends MetadataFieldMapper {
             return option;
         }
 
+        // We need to check Enum name as well as value because of the mapping merge that happens in which, option value
+        // will be represented as Enum name rather than value
         public static SourceOptions option(String value) {
             try {
                 return Enum.valueOf(SourceOptions.class, value);
