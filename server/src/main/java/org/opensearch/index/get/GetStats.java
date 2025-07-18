@@ -56,6 +56,7 @@ public class GetStats implements Writeable, ToXContentFragment {
     private long missingCount;
     private long missingTimeInMillis;
     private long current;
+    private long fromTranslog;
 
     public GetStats() {}
 
@@ -65,14 +66,17 @@ public class GetStats implements Writeable, ToXContentFragment {
         missingCount = in.readVLong();
         missingTimeInMillis = in.readVLong();
         current = in.readVLong();
+        fromTranslog = in.readVLong();
     }
 
-    public GetStats(long existsCount, long existsTimeInMillis, long missingCount, long missingTimeInMillis, long current) {
+    public GetStats(long existsCount, long existsTimeInMillis, long missingCount, long missingTimeInMillis, long current,
+                    long fromTranslog) {
         this.existsCount = existsCount;
         this.existsTimeInMillis = existsTimeInMillis;
         this.missingCount = missingCount;
         this.missingTimeInMillis = missingTimeInMillis;
         this.current = current;
+        this.fromTranslog = fromTranslog;
     }
 
     public void add(GetStats stats) {
@@ -92,6 +96,7 @@ public class GetStats implements Writeable, ToXContentFragment {
         missingCount += stats.missingCount;
         missingTimeInMillis += stats.missingTimeInMillis;
         current += stats.current;
+        fromTranslog += stats.fromTranslog;
     }
 
     public long getCount() {
@@ -134,6 +139,10 @@ public class GetStats implements Writeable, ToXContentFragment {
         return this.current;
     }
 
+    public long getFromTranslog() {
+        return this.fromTranslog;
+    }
+
     @Override
     public XContentBuilder toXContent(XContentBuilder builder, Params params) throws IOException {
         builder.startObject(Fields.GET);
@@ -145,6 +154,7 @@ public class GetStats implements Writeable, ToXContentFragment {
         builder.field(Fields.MISSING_TOTAL, missingCount);
         builder.humanReadableField(Fields.MISSING_TIME_IN_MILLIS, Fields.MISSING_TIME, getMissingTime());
         builder.field(Fields.CURRENT, current);
+        builder.field(Fields.FROM_TRANSLOG, fromTranslog);
         builder.endObject();
         return builder;
     }
@@ -171,6 +181,7 @@ public class GetStats implements Writeable, ToXContentFragment {
         static final String MISSING_TIME = "missing_time";
         static final String MISSING_TIME_IN_MILLIS = "missing_time_in_millis";
         static final String CURRENT = "current";
+        static final String FROM_TRANSLOG = "translog_get";
     }
 
     @Override
@@ -180,5 +191,6 @@ public class GetStats implements Writeable, ToXContentFragment {
         out.writeVLong(missingCount);
         out.writeVLong(missingTimeInMillis);
         out.writeVLong(current);
+        out.writeVLong(fromTranslog);
     }
 }

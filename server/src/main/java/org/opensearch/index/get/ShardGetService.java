@@ -98,6 +98,7 @@ public final class ShardGetService extends AbstractIndexShardComponent {
     private final MeanMetric existsMetric = new MeanMetric();
     private final MeanMetric missingMetric = new MeanMetric();
     private final CounterMetric currentMetric = new CounterMetric();
+    private final CounterMetric fromTranslog = new CounterMetric();
     private final IndexShard indexShard;
 
     public ShardGetService(IndexSettings indexSettings, IndexShard indexShard, MapperService mapperService) {
@@ -112,7 +113,8 @@ public final class ShardGetService extends AbstractIndexShardComponent {
             TimeUnit.NANOSECONDS.toMillis(existsMetric.sum()),
             missingMetric.count(),
             TimeUnit.NANOSECONDS.toMillis(missingMetric.sum()),
-            currentMetric.count()
+            currentMetric.count(),
+            fromTranslog.count()
         );
     }
 
@@ -287,6 +289,7 @@ public final class ShardGetService extends AbstractIndexShardComponent {
 
             // in case we read from translog, some extra steps are needed to make _source consistent and to load stored fields
             if (get.isFromTranslog()) {
+                fromTranslog.inc();
                 // Fast path: if only asked for the source or stored fields that have been already provided by TranslogLeafReader,
                 // just make source consistent by reapplying source filters from mapping (possibly also nulling the source)
                 if (forceSourceForComputingTranslogStoredFields == false) {
