@@ -31,6 +31,8 @@
 
 package org.opensearch.index.engine;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.apache.lucene.codecs.StoredFieldsReader;
 import org.apache.lucene.index.BinaryDocValues;
 import org.apache.lucene.index.ByteVectorValues;
@@ -88,6 +90,7 @@ import static org.apache.lucene.index.DirectoryReader.open;
  */
 public final class TranslogLeafReader extends LeafReader {
 
+    private static final Logger logger = LogManager.getLogger(TranslogLeafReader.class);
     private final Translog.Index operation;
     private final EngineConfig engineConfig;
     private volatile LeafReader inMemoryIndexReader;
@@ -322,6 +325,7 @@ public final class TranslogLeafReader extends LeafReader {
                     throw new IllegalArgumentException("no such doc ID " + docID);
                 }
                 if (visitor.needsField(FAKE_SOURCE_FIELD) == StoredFieldVisitor.Status.YES) {
+                    logger.info("--- Fetching from translog ---");
                     if (engineConfig.getIndexSettings().isDerivedSourceEnabled()) {
                         LeafReader leafReader = getInMemoryIndexReader();
                         assert leafReader != null && leafReader.leaves().size() == 1;
