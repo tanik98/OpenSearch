@@ -329,9 +329,9 @@ public class WildcardFieldMapperTests extends MapperTestCase {
         assertEquals(Collections.singletonList("42"), fetchSourceValue(ignoreAboveMapper, 42L));
         assertEquals(Collections.singletonList("true"), fetchSourceValue(ignoreAboveMapper, true));
 
-        MappedFieldType normalizerMapper = new WildcardFieldMapper.Builder("field", createIndexAnalyzers(null)).normalizer("lowercase")
-            .build(context)
-            .fieldType();
+        MappedFieldType normalizerMapper = new WildcardFieldMapper.Builder("field", Version.CURRENT, createIndexAnalyzers(null)).normalizer(
+            "lowercase"
+        ).build(context).fieldType();
         assertEquals(Collections.singletonList("value"), fetchSourceValue(normalizerMapper, "VALUE"));
         assertEquals(Collections.singletonList("42"), fetchSourceValue(normalizerMapper, 42L));
         assertEquals(Collections.singletonList("value"), fetchSourceValue(normalizerMapper, "value"));
@@ -353,7 +353,7 @@ public class WildcardFieldMapperTests extends MapperTestCase {
 
     public void testPossibleToDeriveSource_WhenNormalizerPresent() throws IOException {
         WildcardFieldMapper mapper = getMapper(FieldMapper.CopyTo.empty(), 100, "lowercase", true);
-        assertThrows(UnsupportedOperationException.class, mapper::canDeriveSource);
+        assertDoesNotThrow(mapper::canDeriveSource);
     }
 
     public void testPossibleToDeriveSource_WhenDocValuesDisabled() throws IOException {
@@ -363,10 +363,15 @@ public class WildcardFieldMapperTests extends MapperTestCase {
 
     public void testDerivedValueFetching_DocValues() throws IOException {
         try (Directory directory = newDirectory()) {
-            WildcardFieldMapper mapper = getMapper(FieldMapper.CopyTo.empty(), Integer.MAX_VALUE, "default", true);
-            String value = "keyword_value";
+            MapperService mapperService = getMapperServiceForDerivedSource();
+            merge(mapperService, fieldMapping(b -> b.field("type", "wildcard").field("doc_values", true)));
+            WildcardFieldMapper mapper = (WildcardFieldMapper) mapperService.documentMapper().mappers().getMapper(FIELD_NAME);
+            String value = "wildcard_value";
+
             try (IndexWriter iw = new IndexWriter(directory, new IndexWriterConfig())) {
-                iw.addDocument(createDocument(mapper, value));
+                // Create document with value stored in ignored field
+                ParsedDocument doc = mapperService.documentMapper().parse(source(b -> b.field(FIELD_NAME, value)));
+                iw.addDocument(doc.rootDoc());
             }
 
             try (DirectoryReader reader = DirectoryReader.open(directory)) {
@@ -374,7 +379,7 @@ public class WildcardFieldMapperTests extends MapperTestCase {
                 mapper.deriveSource(builder, reader.leaves().get(0).reader(), 0);
                 builder.endObject();
                 String source = builder.toString();
-                assertEquals("{\"" + FIELD_NAME + "\":" + "\"" + value + "\"" + "}", source);
+                assertEquals("{\"" + FIELD_NAME + "\":\"" + value + "\"}", source);
             }
         }
     }
@@ -433,6 +438,43 @@ public class WildcardFieldMapperTests extends MapperTestCase {
         String ignoredFieldName = mapper.fieldType().derivedSourceIgnoreFieldName();
 
         assertEquals(1, doc.rootDoc().getFields(ignoredFieldName).length);
+    }
+
+    public void testParseCreateField_Normalizer_WithDerivedSource() throws IOException {
+        MapperService mapperService = getMapperServiceForDerivedSource();
+        merge(mapperService, fieldMapping(b -> b.field("type", "wildcard").field("normalizer", "lowercase")));
+
+        String value = "ALL_CAPS";
+        ParsedDocument doc = mapperService.documentMapper().parse(source(b -> b.field(FIELD_NAME, value)));
+
+        // If derived source is enabled, should have ignored field
+        WildcardFieldMapper mapper = (WildcardFieldMapper) mapperService.documentMapper().mappers().getMapper(FIELD_NAME);
+        String ignoredFieldName = mapper.fieldType().derivedSourceIgnoreFieldName();
+
+        assertEquals(1, doc.rootDoc().getFields(ignoredFieldName).length);
+    }
+
+    public void testDerivedValueFetching_WithNormalizer() throws IOException {
+        try (Directory directory = newDirectory()) {
+            MapperService mapperService = getMapperServiceForDerivedSource();
+            merge(mapperService, fieldMapping(b -> b.field("type", "wildcard").field("normalizer", "lowercase")));
+            WildcardFieldMapper mapper = (WildcardFieldMapper) mapperService.documentMapper().mappers().getMapper(FIELD_NAME);
+            String value = "ALL_CAPS";
+
+            try (IndexWriter iw = new IndexWriter(directory, new IndexWriterConfig())) {
+                // Create document with value stored in ignored field
+                ParsedDocument doc = mapperService.documentMapper().parse(source(b -> b.field(FIELD_NAME, value)));
+                iw.addDocument(doc.rootDoc());
+            }
+
+            try (DirectoryReader reader = DirectoryReader.open(directory)) {
+                XContentBuilder builder = XContentFactory.jsonBuilder().startObject();
+                mapper.deriveSource(builder, reader.leaves().get(0).reader(), 0);
+                builder.endObject();
+                String source = builder.toString();
+                assertEquals("{\"" + FIELD_NAME + "\":\"" + value + "\"}", source);
+            }
+        }
     }
 
     private MapperService getMapperServiceForDerivedSource() {

@@ -687,10 +687,13 @@ public class ObjectMapperTests extends OpenSearchSingleNodeTestCase {
                 .putList("analysis.normalizer.lowercase.filter", "lowercase")
                 .build()
         ).mapperService().documentMapperParser();
-        expectThrows(
-            UnsupportedOperationException.class,
-            () -> normalizerMapperParser.parse("type", new CompressedXContent(normalizerMapping))
-        );
+        assertDoesNotThrow(() -> {
+            try {
+                normalizerMapperParser.parse("type", new CompressedXContent(normalizerMapping));
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        });
 
         // Test 5: Validate object field with nested enabled
         String nestedMapping = """
@@ -1001,5 +1004,13 @@ public class ObjectMapperTests extends OpenSearchSingleNodeTestCase {
     @Override
     protected Collection<Class<? extends Plugin>> getPlugins() {
         return pluginList(InternalSettingsPlugin.class);
+    }
+
+    private void assertDoesNotThrow(Runnable runnable) {
+        try {
+            runnable.run();
+        } catch (Exception e) {
+            fail("Expected no exception, but got: " + e.getMessage());
+        }
     }
 }

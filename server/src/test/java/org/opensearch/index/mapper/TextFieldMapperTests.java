@@ -1144,7 +1144,7 @@ public class TextFieldMapperTests extends MapperTestCase {
         assertEquals(20, mapper.fieldType().getKeywordIgnoredLengthForDerivedSource());
     }
 
-    public void testDerivedSourceWithMultipleKeywordSubFields() throws IOException {
+    public void testDerivedSourceWithMultipleKeywordSubFieldsWithIgnoreAbove() throws IOException {
         MapperService mapperService = getMapperServiceForDerivedSource();
         merge(mapperService, fieldMapping(b -> {
             b.field("type", "text");
@@ -1172,6 +1172,20 @@ public class TextFieldMapperTests extends MapperTestCase {
         TextFieldMapper mapper = (TextFieldMapper) mapperService.documentMapper().mappers().getMapper("field");
         // Should be false since keyword has normalizer
         assertFalse(mapper.fieldType().getHasDerivedSourceSupportedKeyword());
+    }
+
+    public void testDerivedSourceWithMultipleKeywordSubFields() throws IOException {
+        MapperService mapperService = getMapperServiceForDerivedSource();
+        merge(mapperService, fieldMapping(b -> {
+            b.field("type", "text");
+            b.startObject("fields");
+            b.startObject("keyword1").field("type", "keyword").field("normalizer", "whitespace").endObject();
+            b.startObject("keyword2").field("type", "keyword").field("ignore_above", 10).endObject();
+            b.endObject();
+        }));
+
+        TextFieldMapper mapper = (TextFieldMapper) mapperService.documentMapper().mappers().getMapper("field");
+        assertTrue(mapper.fieldType().getHasDerivedSourceSupportedKeyword());
     }
 
     public void testStoredFieldWithLongText() throws IOException {
