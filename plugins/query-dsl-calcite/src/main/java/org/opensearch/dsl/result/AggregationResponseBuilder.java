@@ -8,6 +8,7 @@
 
 package org.opensearch.dsl.result;
 
+import org.opensearch.dsl.aggregation.AggregationMetadata;
 import org.opensearch.dsl.aggregation.AggregationMetadataBuilder;
 import org.opensearch.dsl.aggregation.AggregationRegistry;
 import org.opensearch.dsl.aggregation.AggregationType;
@@ -17,6 +18,8 @@ import org.opensearch.dsl.exception.ConversionException;
 import org.opensearch.search.aggregations.AggregationBuilder;
 import org.opensearch.search.aggregations.InternalAggregation;
 import org.opensearch.search.aggregations.InternalAggregations;
+import org.opensearch.search.aggregations.bucket.filter.FiltersAggregationBuilder;
+import org.opensearch.search.aggregations.bucket.filter.FiltersAggregator.KeyedFilter;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -38,6 +41,7 @@ public final class AggregationResponseBuilder {
 
     private final AggregationRegistry registry;
     private final Map<String, ExecutionResult> granularityMap;
+    private final Map<String, Map<Integer, ExecutionResult>> filtersGranularityMap;
 
     /**
      * Creates a new builder.
@@ -48,9 +52,21 @@ public final class AggregationResponseBuilder {
     public AggregationResponseBuilder(AggregationRegistry registry, List<ExecutionResult> aggResults) {
         this.registry = registry;
         this.granularityMap = new HashMap<>();
+        this.filtersGranularityMap = new HashMap<>();
         for (ExecutionResult result : aggResults) {
             String key = granularityKey(result);
-            granularityMap.put(key, result);
+            AggregationMetadata meta = result.getAggregationMetadata();
+            if (meta != null && meta.getFiltersAggIndex() >= 0) {
+                // This result belongs to a filters aggregation expansion.
+                // Strip the __filters_* suffix from the key to get the base key,
+                // then index by filter index.
+                String baseKey = stripFiltersKeySuffix(key);
+                filtersGranularityMap
+                    .computeIfAbsent(baseKey, k -> new HashMap<>())
+                    .put(meta.getFiltersAggIndex(), result);
+            } else {
+                granularityMap.put(key, result);
+            }
         }
     }
 
@@ -102,7 +118,7 @@ public final class AggregationResponseBuilder {
             Map<String, Object> parentKeyFilter) {
 
         String granularityKey = String.join(",", accumulatedGroupFields);
-        ExecutionResult result = granularityMap.get(granularityKey);
+        ExecutionResult result = lookupResult(granularityKey);
         if (result == null || result.getRows().length == 0) {
             return translator.toInternalAggregation(agg.getName(), null);
         }
@@ -116,13 +132,14 @@ public final class AggregationResponseBuilder {
 
         if (accumulatedGroupFields.isEmpty()) {
             // No grouping — single row result
-            Object value = result.getRows()[0][colIdx];
+            Object[] row = result.getRows()[0];
+            Object value = colIdx < row.length ? row[colIdx] : null;
             return translator.toInternalAggregation(agg.getName(), value);
         }
 
         // With grouping — find the row matching parent key filter
         Object[] matchingRow = findMatchingRow(result, colIndex, parentKeyFilter);
-        Object value = matchingRow != null ? matchingRow[colIdx] : null;
+        Object value = matchingRow != null && colIdx < matchingRow.length ? matchingRow[colIdx] : null;
         return translator.toInternalAggregation(agg.getName(), value);
     }
 
@@ -134,6 +151,18 @@ public final class AggregationResponseBuilder {
             Map<String, Object> parentKeyFilter) throws ConversionException {
 
         List<String> bucketFieldNames = shape.getGrouping(agg).getFieldNames();
+
+        // Single-bucket aggregations (filter, global, etc.) have no GROUP BY columns.
+        // They act as pass-through wrappers.
+        if (bucketFieldNames.isEmpty()) {
+            // Filters aggregation: multi-bucket via separate plans per filter
+            if (agg instanceof FiltersAggregationBuilder filtersAgg) {
+                return buildFiltersBuckets(shape, filtersAgg, accumulatedGroupFields, parentKeyFilter);
+            }
+            // Single filter / global / missing: pass-through
+            return buildSingleBucket(shape, agg, accumulatedGroupFields, parentKeyFilter);
+        }
+
         List<String> newAccumulatedFields = new ArrayList<>(accumulatedGroupFields);
         newAccumulatedFields.addAll(bucketFieldNames);
 
@@ -163,9 +192,12 @@ public final class AggregationResponseBuilder {
             // Doc count from _count column, or default to row count
             long docCount = 1;
             if (countCol != null && !groupRows.isEmpty()) {
-                Object countVal = groupRows.get(0)[countCol];
-                if (countVal instanceof Number) {
-                    docCount = ((Number) countVal).longValue();
+                Object[] firstRow = groupRows.get(0);
+                if (countCol < firstRow.length) {
+                    Object countVal = firstRow[countCol];
+                    if (countVal instanceof Number) {
+                        docCount = ((Number) countVal).longValue();
+                    }
                 }
             }
 
@@ -188,6 +220,137 @@ public final class AggregationResponseBuilder {
         }
 
         return shape.toBucketAggregation(agg, bucketEntries);
+    }
+
+    /**
+     * Handles single-bucket aggregations (filter, global, missing, etc.) that produce
+     * exactly one bucket with no GROUP BY columns. These act as pass-through wrappers.
+     */
+    @SuppressWarnings("unchecked")
+    private InternalAggregation buildSingleBucket(
+            BucketShape<AggregationBuilder> shape,
+            AggregationBuilder agg,
+            List<String> accumulatedGroupFields,
+            Map<String, Object> parentKeyFilter) throws ConversionException {
+
+        Collection<AggregationBuilder> subAggs = shape.getSubAggregations(agg);
+
+        // Build sub-aggregations — pass through accumulated fields unchanged
+        InternalAggregations subAggResults;
+        if (subAggs != null && !subAggs.isEmpty()) {
+            List<InternalAggregation> subAggList = buildLevel(subAggs, accumulatedGroupFields, parentKeyFilter);
+            subAggResults = InternalAggregations.from(subAggList);
+        } else {
+            subAggResults = InternalAggregations.EMPTY;
+        }
+
+        // Compute doc_count by summing _count from the nearest sub-agg granularity result
+        long docCount = computeSingleBucketDocCount(accumulatedGroupFields, subAggs, parentKeyFilter);
+
+        BucketEntry entry = new BucketEntry(List.of(), docCount, subAggResults);
+        return shape.toBucketAggregation(agg, List.of(entry));
+    }
+
+    /**
+     * Handles the {@code filters} aggregation by collecting results from multiple
+     * granularities (one per filter) and assembling them into bucket entries.
+     *
+     * <p>Each filter in the filters aggregation was expanded by the tree walker into
+     * a separate granularity with a unique {@code filtersAggIndex}. This method
+     * looks up each filter's results and builds the corresponding bucket entry.
+     */
+    @SuppressWarnings("unchecked")
+    private InternalAggregation buildFiltersBuckets(
+            BucketShape<AggregationBuilder> shape,
+            FiltersAggregationBuilder filtersAgg,
+            List<String> accumulatedGroupFields,
+            Map<String, Object> parentKeyFilter) throws ConversionException {
+
+        List<KeyedFilter> filters = filtersAgg.filters();
+        Collection<AggregationBuilder> subAggs = shape.getSubAggregations(filtersAgg);
+
+        // The base key is the accumulated group fields (without __filters_ suffix)
+        String baseKey = String.join(",", accumulatedGroupFields);
+        Map<Integer, ExecutionResult> filterResults = filtersGranularityMap.getOrDefault(baseKey, Map.of());
+
+        List<BucketEntry> bucketEntries = new ArrayList<>();
+        for (int i = 0; i < filters.size(); i++) {
+            ExecutionResult filterResult = filterResults.get(i);
+
+            // Build sub-aggregations for this filter bucket using the filter-specific
+            // accumulated fields (with __filters_ suffix for granularity key matching)
+            List<String> filterAccFields = new ArrayList<>(accumulatedGroupFields);
+            filterAccFields.add("__filters_" + filtersAgg.getName() + "_" + i);
+
+            InternalAggregations subAggResults;
+            if (subAggs != null && !subAggs.isEmpty()) {
+                List<InternalAggregation> subAggList = buildLevel(subAggs, filterAccFields, parentKeyFilter);
+                subAggResults = InternalAggregations.from(subAggList);
+            } else {
+                subAggResults = InternalAggregations.EMPTY;
+            }
+
+            // Compute doc_count from the filter's result
+            long docCount = 0;
+            if (filterResult != null && filterResult.getRows().length > 0) {
+                docCount = computeDocCountFromResult(filterResult, parentKeyFilter);
+            }
+
+            bucketEntries.add(new BucketEntry(List.of(), docCount, subAggResults));
+        }
+
+        return shape.toBucketAggregation(filtersAgg, bucketEntries);
+    }
+
+    /**
+     * Computes the doc_count for a single-bucket aggregation by summing the _count
+     * values from the nearest sub-aggregation granularity result.
+     */
+    @SuppressWarnings("unchecked")
+    private long computeSingleBucketDocCount(
+            List<String> accumulatedGroupFields,
+            Collection<AggregationBuilder> subAggs,
+            Map<String, Object> parentKeyFilter) throws ConversionException {
+
+        if (subAggs == null || subAggs.isEmpty()) return 0;
+
+        for (AggregationBuilder subAgg : subAggs) {
+            AggregationType<AggregationBuilder> subType = registry.findHandler(subAgg);
+            if (subType instanceof BucketShape) {
+                BucketShape<AggregationBuilder> subShape = (BucketShape<AggregationBuilder>) subType;
+                List<String> subFields = new ArrayList<>(accumulatedGroupFields);
+                subFields.addAll(subShape.getGrouping(subAgg).getFieldNames());
+                String key = String.join(",", subFields);
+                ExecutionResult result = granularityMap.get(key);
+                if (result != null && result.getRows().length > 0) {
+                    return computeDocCountFromResult(result, parentKeyFilter);
+                }
+            }
+        }
+        return 0;
+    }
+
+    /**
+     * Computes doc_count by summing _count column values from a result,
+     * optionally filtered by parent key.
+     */
+    private static long computeDocCountFromResult(ExecutionResult result, Map<String, Object> parentKeyFilter) {
+        Map<String, Integer> colIndex = buildColumnIndex(result);
+        Integer countCol = colIndex.get(AggregationMetadataBuilder.IMPLICIT_COUNT_NAME);
+        if (countCol == null) {
+            return result.getRows().length;
+        }
+        List<Object[]> rows = filterRows(result.getRows(), colIndex, parentKeyFilter);
+        long total = 0;
+        for (Object[] row : rows) {
+            if (countCol < row.length) {
+                Object val = row[countCol];
+                if (val instanceof Number) {
+                    total += ((Number) val).longValue();
+                }
+            }
+        }
+        return total;
     }
 
     private static Map<String, Integer> buildColumnIndex(ExecutionResult result) {
@@ -264,5 +427,66 @@ public final class AggregationResponseBuilder {
         List<String> groupByFields = result.getAggregationMetadata().getGroupByFieldNames();
         if (groupByFields.isEmpty()) return "";
         return groupByFields.stream().collect(Collectors.joining(","));
+    }
+
+    /**
+     * Strips the {@code __filters_*} suffix from a granularity key to get the base key.
+     * For example, {@code "name,__filters_myAgg_0"} becomes {@code "name"}.
+     */
+    private static String stripFiltersKeySuffix(String key) {
+        // Remove all __filters_* segments from the comma-separated key
+        String[] parts = key.split(",");
+        StringBuilder sb = new StringBuilder();
+        for (String part : parts) {
+            if (!part.startsWith("__filters_")) {
+                if (sb.length() > 0) sb.append(",");
+                sb.append(part);
+            }
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Looks up an execution result by granularity key, checking both the regular
+     * granularity map and the filters granularity map.
+     */
+    private ExecutionResult lookupResult(String granularityKey) {
+        ExecutionResult result = granularityMap.get(granularityKey);
+        if (result != null) return result;
+
+        // Check if this key contains a __filters_ marker — if so, look up in filtersGranularityMap
+        if (granularityKey.contains("__filters_")) {
+            String baseKey = stripFiltersKeySuffix(granularityKey);
+            Map<Integer, ExecutionResult> filterResults = filtersGranularityMap.get(baseKey);
+            if (filterResults != null) {
+                // Extract the filter index from the key
+                int idx = extractFiltersIndex(granularityKey);
+                if (idx >= 0) {
+                    return filterResults.get(idx);
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Extracts the filter index from a granularity key containing a __filters_ marker.
+     * For example, {@code "__filters_myAgg_2"} returns 2.
+     */
+    private static int extractFiltersIndex(String granularityKey) {
+        String[] parts = granularityKey.split(",");
+        for (String part : parts) {
+            if (part.startsWith("__filters_")) {
+                int lastUnderscore = part.lastIndexOf('_');
+                if (lastUnderscore > 0) {
+                    try {
+                        return Integer.parseInt(part.substring(lastUnderscore + 1));
+                    } catch (NumberFormatException e) {
+                        return -1;
+                    }
+                }
+            }
+        }
+        return -1;
     }
 }

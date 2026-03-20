@@ -11,8 +11,10 @@ package org.opensearch.dsl.aggregation;
 import org.apache.calcite.rel.core.AggregateCall;
 import org.apache.calcite.util.ImmutableBitSet;
 import org.opensearch.dsl.converter.CollationResolver;
+import org.opensearch.index.query.QueryBuilder;
 import org.opensearch.search.aggregations.BucketOrder;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -35,19 +37,25 @@ public final class AggregationMetadata {
     private final List<String> aggregateFieldNames;
     private final List<AggregateCall> aggregateCalls;
     private final List<BucketOrder> bucketOrders;
+    private final List<QueryBuilder> bucketFilters;
+    private final int filtersAggIndex;
 
     AggregationMetadata(
         ImmutableBitSet groupByBitSet,
         List<String> groupByFieldNames,
         List<String> aggregateFieldNames,
         List<AggregateCall> aggregateCalls,
-        List<BucketOrder> bucketOrders
+        List<BucketOrder> bucketOrders,
+        List<QueryBuilder> bucketFilters,
+        int filtersAggIndex
     ) {
         this.groupByBitSet = groupByBitSet;
         this.groupByFieldNames = groupByFieldNames;
         this.aggregateFieldNames = aggregateFieldNames;
         this.aggregateCalls = aggregateCalls;
         this.bucketOrders = bucketOrders;
+        this.bucketFilters = bucketFilters;
+        this.filtersAggIndex = filtersAggIndex;
     }
 
     /** Returns the bit set of GROUP BY column indices. */
@@ -73,6 +81,23 @@ public final class AggregationMetadata {
     /** Returns the bucket orders for post-aggregation sorting. */
     public List<BucketOrder> getBucketOrders() {
         return bucketOrders;
+    }
+
+    public List<QueryBuilder> getBucketFilters() {
+        return bucketFilters;
+    }
+
+    /**
+     * Returns the filters aggregation bucket index, or -1 if this metadata
+     * is not part of a filters aggregation expansion.
+     *
+     * <p>When a {@code filters} aggregation is expanded by the tree walker,
+     * each filter produces a separate AggregationMetadata with a unique index
+     * (0, 1, 2, ...). The response builder uses this to reassemble the
+     * results into the correct bucket order.
+     */
+    public int getFiltersAggIndex() {
+        return filtersAggIndex;
     }
 
     /** Returns true if bucket orders are present. */

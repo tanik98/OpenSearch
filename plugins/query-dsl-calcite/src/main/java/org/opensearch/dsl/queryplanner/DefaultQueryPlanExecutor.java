@@ -13,6 +13,7 @@ import org.apache.calcite.rel.metadata.RelMetadataQueryBase;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.opensearch.dsl.QueryPlans;
+import org.opensearch.dsl.aggregation.AggregationMetadataBuilder;
 import org.opensearch.dsl.result.ExecutionResult;
 import org.opensearch.dsl.result.QueryPlanResult;
 
@@ -103,6 +104,13 @@ public class DefaultQueryPlanExecutor implements QueryPlanExecutor {
             };
         }
 
+        if (fieldNames.contains("avg_price")) {
+            // Granularity "": [avg_price]
+            return new Object[][] {
+                { 1032.33 },
+            };
+        }
+
         if (fieldNames.contains("brand")) {
             // Granularity "brand": [brand, brand_avg, _count]
             return new Object[][] {
@@ -111,14 +119,24 @@ public class DefaultQueryPlanExecutor implements QueryPlanExecutor {
             };
         }
 
-        if (fieldNames.contains("avg_price")) {
-            // Granularity "": [avg_price]
+        // Granularity "" (no grouping): single-row metric result
+        // Column count must match fieldNames to avoid ArrayIndexOutOfBoundsException
+        if (fieldNames.size() == 1) {
             return new Object[][] {
                 { 1032.33 },
             };
         }
 
-        // Unrecognized schema — return empty result to avoid shape mismatches
-        return new Object[0][];
+        // Filters agg or filter agg with metrics only (no GROUP BY):
+        // e.g., [avg_amount, _count] or just [avg_price, _count]
+        Object[] row = new Object[fieldNames.size()];
+        for (int i = 0; i < fieldNames.size(); i++) {
+            if (AggregationMetadataBuilder.IMPLICIT_COUNT_NAME.equals(fieldNames.get(i))) {
+                row[i] = 100L;
+            } else {
+                row[i] = 1032.33;
+            }
+        }
+        return new Object[][] { row };
     }
 }

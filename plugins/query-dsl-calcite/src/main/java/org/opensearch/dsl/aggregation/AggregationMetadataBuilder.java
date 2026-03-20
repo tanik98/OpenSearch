@@ -15,6 +15,7 @@ import org.apache.calcite.sql.fun.SqlStdOperatorTable;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.util.ImmutableBitSet;
 import org.opensearch.dsl.exception.ConversionException;
+import org.opensearch.index.query.QueryBuilder;
 import org.opensearch.search.aggregations.BucketOrder;
 import org.opensearch.search.aggregations.InternalOrder;
 
@@ -37,7 +38,9 @@ public class AggregationMetadataBuilder {
     private final List<String> aggregateFieldNames = new ArrayList<>();
     private final List<AggregateCall> aggregateCalls = new ArrayList<>();
     private final List<BucketOrder> bucketOrders = new ArrayList<>();
+    private final List<QueryBuilder> bucketFilters = new ArrayList<>();
     private boolean implicitCountRequested = false;
+    private int filtersAggIndex = -1;
 
     /**
      * Adds a grouping contribution.
@@ -87,6 +90,28 @@ public class AggregationMetadataBuilder {
      */
     public void requestImplicitCount() {
         this.implicitCountRequested = true;
+    }
+
+    /**
+     * Adds a bucket-level filter condition (from a filter aggregation).
+     * Multiple filter buckets in the nesting path are ANDed together at build time.
+     *
+     * @param filter the filter query builder (may be null, in which case it is ignored)
+     */
+    public void addBucketFilter(QueryBuilder filter) {
+        if (filter != null) {
+            bucketFilters.add(filter);
+        }
+    }
+
+    /**
+     * Sets the filters aggregation bucket index for this metadata.
+     * Used when a {@code filters} aggregation is expanded into N separate granularities.
+     *
+     * @param index the 0-based filter index
+     */
+    public void setFiltersAggIndex(int index) {
+        this.filtersAggIndex = index;
     }
 
     /**
@@ -144,7 +169,9 @@ public class AggregationMetadataBuilder {
             List.copyOf(allGroupFieldNames),
             List.copyOf(allFieldNames),
             List.copyOf(allCalls),
-            List.copyOf(bucketOrders)
+            List.copyOf(bucketOrders),
+            List.copyOf(bucketFilters),
+            filtersAggIndex
         );
     }
 }

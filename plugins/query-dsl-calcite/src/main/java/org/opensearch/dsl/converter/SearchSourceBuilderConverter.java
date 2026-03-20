@@ -85,9 +85,11 @@ public class SearchSourceBuilderConverter {
      * @throws ConversionException if any converter fails
      */
     public QueryPlans convert(ConversionContext ctx) throws ConversionException {
-        // Shared base: Scan → Filter
-        RelNode base = scanConverter.convert(null, ctx);
-        base = filterConverter.convert(base, ctx);
+        // Scan is always the starting point
+        RelNode scan = scanConverter.convert(null, ctx);
+
+        // Shared base for hits: Scan → Filter (top-level query only, no agg metadata yet)
+        RelNode hitsBase = filterConverter.convert(scan, ctx);
 
         QueryPlans.Builder builder = new QueryPlans.Builder();
         SearchSourceBuilder searchSource = ctx.getSearchSource();
@@ -97,17 +99,22 @@ public class SearchSourceBuilderConverter {
 
         // Hits path: Filter → Project → Sort
         if (size > 0 || !hasAggs) {
-            RelNode hits = projectConverter.convert(base, ctx);
+            RelNode hits = projectConverter.convert(hitsBase, ctx);
             hits = sortConverter.convert(hits, ctx);
             builder.add(new QueryPlans.QueryPlan(QueryPlans.Type.HITS, hits));
         }
 
         // Aggregation path: Filter → Aggregate → PostAggregate (per granularity)
+        // Each granularity may carry its own bucket-level filters (from filter/filters
+        // aggregations), so we apply FilterConverter per granularity after setting
+        // the metadata on the context. We start from scan (not hitsBase) to avoid
+        // double-applying the top-level query when bucket filters are also present.
         if (hasAggs) {
             List<AggregationMetadata> metadataList = walkAggregations(ctx);
             for (AggregationMetadata metadata : metadataList) {
                 ctx.setAggregationMetadata(metadata);
-                RelNode aggs = aggregateConverter.convert(base, ctx);
+                RelNode aggBase = filterConverter.convert(scan, ctx);
+                RelNode aggs = aggregateConverter.convert(aggBase, ctx);
                 aggs = postAggregateConverter.convert(aggs, ctx);
                 builder.add(new QueryPlans.QueryPlan(QueryPlans.Type.AGGREGATION, aggs, metadata));
             }

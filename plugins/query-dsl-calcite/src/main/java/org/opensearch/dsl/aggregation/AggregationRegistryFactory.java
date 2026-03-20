@@ -8,6 +8,8 @@
 
 package org.opensearch.dsl.aggregation;
 
+import org.opensearch.dsl.aggregation.bucket.FilterBucketShape;
+import org.opensearch.dsl.aggregation.bucket.FiltersBucketShape;
 import org.opensearch.dsl.aggregation.bucket.MultiTermsBucketShape;
 import org.opensearch.dsl.aggregation.bucket.TermsBucketShape;
 import org.opensearch.dsl.aggregation.metric.AvgMetricTranslator;
@@ -28,6 +30,8 @@ public class AggregationRegistryFactory {
         AggregationRegistry registry = new AggregationRegistry();
         registry.register(new TermsBucketShape());
         registry.register(new MultiTermsBucketShape());
+        registry.register(new FilterBucketShape());
+        registry.register(new FiltersBucketShape());
         registry.register(new AvgMetricTranslator());
         registry.register(new SumMetricTranslator());
         registry.register(new MinMetricTranslator());
